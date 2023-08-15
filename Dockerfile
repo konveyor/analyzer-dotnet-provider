@@ -28,6 +28,11 @@ RUN microdnf -y install \
   dotnet-sdk-2.1.x86_64 dotnet-sdk-2.1.5xx.x86_64 dotnet-sdk-3.0.x86_64 dotnet-sdk-3.1.x86_64 dotnet-sdk-5.0.x86_64 dotnet-sdk-6.0.x86_64 \
   go-toolset \
   && microdnf clean all && rm -rf /var/cache/yum
+RUN microdnf -y install dnf
+RUN dnf -y install 'dnf-command(config-manager)'
+RUN dnf config-manager --set-enabled ubi-8-codeready-builder-rpms
+RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+RUN dnf -y install mono-complete
 RUN dotnet tool install --global csharp-ls
 ENV PATH="$PATH:/opt/app-root/.dotnet/tools:/home/go/bin"
 USER default
