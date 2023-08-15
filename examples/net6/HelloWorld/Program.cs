@@ -4,9 +4,15 @@ namespace HelloWorld
 {
     class Program
     {
-        static void Main(string[] args)
+        public void NonPortableMethod()
         {
             Console.WriteLine("Hello World!");
+        }
+
+        static void Main(string[] args)
+        {
+            Program p = new Program();
+            p.NonPortableMethod();
         }
     }
 }
