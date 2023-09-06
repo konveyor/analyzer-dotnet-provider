@@ -19,12 +19,17 @@ import (
 )
 
 type dotnetCondition struct {
-	Referenced string `yaml:"referenced"`
+	Referenced referenceCondition `yaml:"referenced"`
 }
 
-// type dotnetConditionReference struct {
-//
-// }
+// Example:
+// dotnet.referenced:
+//	namespace: System.Web.Mvc
+//	pattern: HttpNotFound
+type referenceCondition struct {
+	Namespace string `yaml:"namespace"`
+	Pattern   string `yaml:"pattern"`
+}
 
 type dotnetProvider struct{}
 
@@ -57,17 +62,17 @@ func (p *dotnetProvider) Capabilities() []provider.Capability {
 	}
 }
 
-func (p *dotnetProvider) Init(ctx context.Context, log logr.Logger, c provider.InitConfig) (provider.ServiceClient, error) {
-	if c.AnalysisMode != provider.FullAnalysisMode {
+func (p *dotnetProvider) Init(ctx context.Context, log logr.Logger, config provider.InitConfig) (provider.ServiceClient, error) {
+	if config.AnalysisMode != provider.FullAnalysisMode {
 		return nil, fmt.Errorf("only full analysis is supported")
 	}
 
 	// handle proxy settings
-	for k, v := range c.Proxy.ToEnvVars() {
+	for k, v := range config.Proxy.ToEnvVars() {
 		os.Setenv(k, v)
 	}
 
-	codePath, err := filepath.Abs(c.Location)
+	codePath, err := filepath.Abs(config.Location)
 	if err != nil {
 		log.Error(err, "unable to get path to analyze")
 		panic(1)
@@ -79,16 +84,13 @@ func (p *dotnetProvider) Init(ctx context.Context, log logr.Logger, c provider.I
 	recvLog := &received{l: log.WithValues("stdio", "recv")}
 	handlerLog := log.WithValues("stdio", "replyHandler")
 
-	// TODO(djzager): Should totally have an answer for the multiple lsp servers we can run,
-	// and the multiple ways each of them could be run depending on the .NET version we
-	// are looking at
-	// lspServerPath, ok := c.ProviderSpecificConfig[provider.LspServerPathConfigKey].(string)
-	// if !ok || lspServerPath == "" {
-	// 	return nil, fmt.Errorf("invalid lspServerPath provided, unable to init go provider")
-	// }
-	//
-	// cmd := exec.CommandContext(ctx, lspServerPath)
-	cmd := exec.CommandContext(ctx, "csharp-ls")
+	lspServerPath, ok := config.ProviderSpecificConfig[provider.LspServerPathConfigKey].(string)
+	if !ok || lspServerPath == "" {
+		cancelFunc()
+		return nil, fmt.Errorf("invalid lspServerPath provided, unable to init dotnet provider")
+	}
+
+	cmd := exec.CommandContext(ctx, lspServerPath)
 	cmd.Dir = codePath // At a minimum, 'csharp-ls' doesn't respect URI @initialization
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -182,6 +184,6 @@ func (p *dotnetProvider) Init(ctx context.Context, log logr.Logger, c provider.I
 		cancelFunc: cancelFunc,
 		cmd:        cmd,
 		log:        log,
-		config:     c,
+		config:     config,
 	}, nil
 }
