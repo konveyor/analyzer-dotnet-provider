@@ -1,3 +1,14 @@
+# TODO: fix version mismatch in final container
+FROM registry.access.redhat.com/ubi8/go-toolset:latest as go-builder
+ENV GOPATH=$APP_ROOT
+
+COPY go.mod .
+COPY go.sum .
+COPY main.go .
+COPY pkg/ ./pkg
+RUN go mod download
+RUN go build -o analyzer-dotnet-provider main.go
+
 FROM registry.access.redhat.com/ubi8/dotnet-70 AS builder
 USER root
 RUN microdnf -y install dnf
@@ -12,8 +23,29 @@ RUN cd omnisharp-roslyn-1.39.6 && ./build.sh --target Build --use-global-dotnet-
 
 FROM registry.access.redhat.com/ubi8/dotnet-70
 USER root
-RUN microdnf -y install dotnet-sdk-2.1.x86_64 dotnet-sdk-2.1.5xx.x86_64 dotnet-sdk-3.0.x86_64 dotnet-sdk-3.1.x86_64 dotnet-sdk-5.0.x86_64 dotnet-sdk-6.0.x86_64 && microdnf clean all && rm -rf /var/cache/yum
+# This is because SDKs are not universally available across architectures
+RUN if [[ "$(uname -m)" = "x86_64" || "$(uname -m)" = "amd64" ]]; then \
+      microdnf -y install dotnet-sdk-2.1 dotnet-sdk-2.1.5xx dotnet-sdk-3.0 \
+                          dotnet-sdk-3.1 dotnet-sdk-5.0 dotnet-sdk-6.0 \
+                          dotnet-sdk-7.0; \
+    elif [[ "$(uname -m)" = "aarch64" || "$(uname -m)" = "s390x" ]]; then \
+      microdnf -y install dotnet-sdk-6.0 dotnet-sdk-7.0; \
+    elif [[ "$(uname -m)" = "ppc64le" ]]; then \
+      microdnf -y install dotnet-sdk-7.0; \
+    fi \
+    && microdnf -y install go-toolset \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum
+RUN microdnf -y install dnf
+RUN dnf -y install 'dnf-command(config-manager)'
+RUN dnf config-manager --set-enabled ubi-8-codeready-builder-rpms
+RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+RUN dnf -y install mono-complete
+RUN dotnet tool install --global csharp-ls
+ENV PATH="$PATH:/opt/app-root/.dotnet/tools:/home/go/bin"
 USER default
+EXPOSE 3456
+
 COPY --from=builder /opt/app-root/src/omnisharp-roslyn-1.39.6/bin/Release/OmniSharp.Stdio.Driver/net6.0/ /opt/app-root/omnisharp
-COPY --from=builder /opt/app-root/src/omnisharp-roslyn-1.39.6/bin/Release/OmniSharp.Http.Driver/net6.0/ /opt/app-root/omnisharp-http
-ENTRYPOINT ["dotnet", "/opt/app-root/omnisharp/OmniSharp.dll"]
+COPY --from=go-builder /opt/app-root/src/analyzer-dotnet-provider /usr/bin/analyzer-dotnet-provider
+ENTRYPOINT ["analyzer-dotnet-provider", "-port", "3456"]

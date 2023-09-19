@@ -1,0 +1,3 @@
+[submodule "examples/nerd-dinner"]
+	path = examples/nerd-dinner
+	url = git@github.com:sixeyed/nerd-dinner.git
